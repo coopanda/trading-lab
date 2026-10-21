@@ -104,7 +104,7 @@ if(typeof document!=='undefined'){
   }
   function renderPaper(){
     let m=labData;if(!m)return;let bk=book(),bars=currentBars(),last=bars.at(-1),session=bars.filter(b=>b.session===last?.session),range=session.slice(0,3),high=range.length===3?Math.max(...range.map(b=>b.h)):null,trigger=high!==null&&session.length>3&&last.c>high,fill=bk.ledger.filter(e=>e.side==='BUY').at(-1);
-    labGet('paperTitle').textContent=m.symbol+' trade';labGet('paperSymbol').textContent=m.symbol;
+    labGet('paperTitle').textContent=labData.symbol+' trade';labGet('paperSymbol').textContent=labData.symbol;
     labGet('paperTrigger').textContent=mode==='daily'?'Daily simulation shown above. Switch to five-minute mode for executable paper practice.':trigger?'Closed above the opening-range high '+labPrice(m,high)+' at '+last.date.slice(11,16)+' ET on '+last.session+'. You can queue a paper BUY; it fills only at the next visible 5-minute open.':'No breakout trigger at the visible candle. A paper BUY requires a close above the first 15-minute high'+(high?' ('+labPrice(m,high)+')':'')+'. No automatic order placed.';
     labGet('paperEntry').textContent=fill?fill.time+' · '+labPrice(m,fill.price)+' · '+fill.qty+' share(s) · PAPER FILLED':'Reference '+labPrice(m,m.entry)+' · not yet filled';
     let stop=bk.position?.stop||bk.pending?.stop||m.stop,target=bk.position?.target||bk.pending?.target||m.target;
@@ -123,9 +123,9 @@ if(typeof document!=='undefined'){
     labGet('labSubtitle').textContent=d.symbol+' · 5-minute candle '+m.asOf+' → '+horizon+' five-minute steps '+(practice?'to this historical session close':d.mode==='to-close'?'to session close '+d.sessionClose:'into a standard next session');
     labGet('labMeta').innerHTML='<span class="lab-pill">5-minute regular session</span> <span class="lab-pill">'+horizon+' modeled intervals per replay</span>';
     labGet('labCountTitle').textContent=m.count.toLocaleString('en-US');labGet('labCountTitle').nextElementSibling.textContent='simulated session replays';
-    labGet('labRecapTitle').textContent=m.symbol+': entry, stop & target';
+    labGet('labRecapTitle').textContent=labData.symbol+': entry, stop & target';
     labGet('labBacktest').textContent='Completed-session check: '+labData.backtest.sessions+' full 78-candle historical sessions; '+labData.backtest.triggers+' first 15-minute opening-range breakouts, '+labData.backtest.target+' target-first, '+labData.backtest.stop+' stop-first, '+labData.backtest.neither+' neither by close. Current percentage brackets applied retrospectively; not out-of-sample validation. Shortened/incomplete sessions excluded.';
-    labGet('labHistTitle').textContent='Where '+m.symbol+' closes across '+m.count.toLocaleString('en-US')+' simulated replays';
+    labGet('labHistTitle').textContent='Where '+labData.symbol+' closes across '+m.count.toLocaleString('en-US')+' simulated replays';
     labGet('labSource').textContent=d.source+' · '+d.currency+' · '+m.sampleSize+' within-session five-candle blocks. No overnight/missing-bar stitching. Only visible completed candles; 5m bootstrap, not daily data or predictive AI. Stop/target learned from these same paths. '+d.note;
     let status=practice?'Historical practice as of '+m.asOf+'. Later candles are hidden and excluded.':d.mode==='to-close'?'Latest supplied completed candle '+d.asOf+'; projecting to '+d.sessionClose+'. Data can be delayed.':'Market closed or latest supplied session is old. Reference '+d.asOf+'; modeling a standard next session, not today’s close. Future calendar/gaps not modeled.';
     labGet('labStatus').textContent=status;renderPaper();
@@ -136,7 +136,7 @@ if(typeof document!=='undefined'){
     catch(e){labGet('labStatus').textContent='Five-minute data/model unavailable: '+e.message+'. No daily data relabeled as intraday. Daily mode remains available.';if(!intradayResponse)labGet('labResult').hidden=true;}
     finally{requestBusy=false;b.disabled=false;}
   }
-  labGet('paperExecute').onclick=()=>{try{let last=currentBars().at(-1),m=labData;book().queue(m.symbol,Number(labGet('paperQty').value),m.entry,m.stop,m.target,last);save();renderPaper();}catch(e){labGet('paperStatus').textContent='Paper order rejected: '+e.message;}};
+  labGet('paperExecute').onclick=()=>{try{let last=currentBars().at(-1),m=labData;book().queue(labData.symbol,Number(labGet('paperQty').value),m.entry,m.stop,m.target,last);save();renderPaper();}catch(e){labGet('paperStatus').textContent='Paper order rejected: '+e.message;}};
   labGet('paperQty').oninput=renderPaper;
   labGet('paperRefresh').onclick=()=>{practice=null;mode='5m';labGet('intraMode').value='5m';loadIntraday();};
   labGet('paperPractice').onclick=()=>{
@@ -158,7 +158,7 @@ if(typeof document!=='undefined'){
   labPaintFan=function(id='labFan',ticket=false){if(id==='labTicketCanvas'){drawPaper();return;}originalFan(id,ticket);if(labData?.timeframe==='5m'){let s=labCanvas(id);if(!s)return; /* restore chart after canvas sizing */ originalFan(id,ticket);let c=labGet(id),ctx=c.getContext('2d'),w=c.clientWidth,h=c.clientHeight;ctx.fillStyle='#0b1525';ctx.fillRect(0,h-37,w,37);ctx.fillStyle='#b5cde8';ctx.fillText('Past 5-minute candles',12,h-14);ctx.textAlign='right';ctx.fillText('+'+labData.horizon+' × 5m · modeled close',w-110,h-14);ctx.textAlign='left';}};
   const originalRender=labRender;labRender=function(){originalRender();renderPaper();};
   const originalDaily=labLoad;labLoad=async function(){await originalDaily();if(labData){labGet('labCountTitle').nextElementSibling.textContent='simulated paths';renderPaper();}};
-  labGet('labExport').onclick=()=>{if(!labData)return;let m=labData;download({app:'Trading Lab',mode:'paper-only',symbol:m.symbol,timeframe:m.timeframe||'daily',asOf:m.asOf,horizon:m.horizon,count:m.count,seed:m.seed,entry:m.entry,stop:m.stop,target:m.target,fan:m.fan,bins:m.bins,exits:m.exits,backtest:m.backtest,source:m.source,paths:m.paths.map(p=>p.closes),limitations:'Unvalidated bootstrap frequencies, not calibrated odds. Future news, gaps, costs and liquidity not modeled.'},'trading-lab-scenarios.json');};
+  labGet('labExport').onclick=()=>{if(!labData)return;let m=labData;download({app:'Trading Lab',mode:'paper-only',symbol:labData.symbol,timeframe:m.timeframe||'daily',asOf:m.asOf,horizon:m.horizon,count:m.count,seed:m.seed,entry:m.entry,stop:m.stop,target:m.target,fan:m.fan,bins:m.bins,exits:m.exits,backtest:m.backtest,source:m.source,paths:m.paths.map(p=>p.closes),limitations:'Unvalidated bootstrap frequencies, not calibrated odds. Future news, gaps, costs and liquidity not modeled.'},'trading-lab-scenarios.json');};
   // Original pixel-bull illustrations inspired by the reference, not remote image placeholders.
   function bull(icon,color){return '<svg viewBox="0 0 150 105" aria-hidden="true"><path fill="#d98669" d="M24 43h21V24h63v15h17v22h-12v26h-11V68H87v19H76V68H61v19H50V61H24z"/><rect x="52" y="35" width="7" height="7" fill="#292b2b"/><rect x="93" y="35" width="7" height="7" fill="#292b2b"/><path d="M43 24V13h10v11M98 24V13h10v11" fill="#d98669"/><rect x="106" y="4" width="38" height="36" rx="6" fill="'+color+'" stroke="#35464c" stroke-width="2"/><text x="125" y="30" text-anchor="middle" font-size="23" fill="white">'+icon+'</text></svg>';}
   let tools=[['terminal','Chart','▥','#399979'],['liveNews','News Monitor','▤','#496774'],['future','Entry','◴','#77989b'],['future','Exit Planner','⇥','#328557'],['future','Time Machine','◷','#b18a38'],['risk','Risk Manager','✓','#426491'],['risk','Budget Manager','▦','#568276'],['future','Order Executor','▣','#596c87'],['alerts','Price Alerts','♧','#b79937'],['earnings','Earnings Analyst','▥','#69965d'],['congress','Pelosi Tracker','◎','#41474d']];
