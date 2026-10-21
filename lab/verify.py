@@ -78,7 +78,7 @@ class IntradayDataTests(unittest.TestCase):
         self.assertIn('https://cdn.jsdelivr.net', CSP)
         self.assertIn('https://huggingface.co', CSP)
         self.assertIn('wasm-unsafe-eval', CSP)
-        self.assertIn("frame-ancestors 'none'", CSP)
+        self.assertIn("frame-ancestors 'self'", CSP)
 
 
 def verify_js():
