@@ -13,7 +13,9 @@ ABOUT = ("11 Claude skills that copy the investors you trust, watch the news and
 # skills that can lead to an order carry the safety block
 ORDER_PATH = ["trader-copycat", "trader-budget", "trader-pelosi", "trader-risk", "trader-broker",
               "trader-tax", "trader-alerts", "trader-rebalance"]
-
+# Render creates these during builds; they are not repository source files.
+GENERATED_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache"}
+WEB_FILES = ["app.py", "index.html", "web_test.py"]
 
 def frontmatter(path):
     with open(path, encoding="utf-8") as fh:
@@ -21,14 +23,12 @@ def frontmatter(path):
     m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
     return (m.group(1) if m else ""), text
 
-
 def every_text_file():
     for base, dirs, files in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+        dirs[:] = [d for d in dirs if d not in GENERATED_DIRS]
         for f in files:
             if f.endswith((".md", ".py", ".json", ".csv", ".txt", ".xml")) or f == "LICENSE":
                 yield os.path.join(base, f)
-
 
 class Repo(unittest.TestCase):
     def test_eleven_skill_folders_at_the_root(self):
@@ -37,8 +37,12 @@ class Repo(unittest.TestCase):
         self.assertEqual(found, sorted(SKILLS))
 
     def test_root_matches_the_reel(self):
-        root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".git"))
-        self.assertEqual(root, sorted([".claude-plugin", "LICENSE", "README.md", "tests"] + SKILLS))
+        root = sorted(d for d in os.listdir(ROOT)
+                      if not d.startswith(".git") and d not in GENERATED_DIRS)
+        expected = [".claude-plugin", "LICENSE", "README.md", "tests"] + SKILLS + WEB_FILES
+        self.assertEqual(root, sorted(expected))
+        for name in WEB_FILES:
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, name)), name)
 
     def test_frontmatter_name_and_description(self):
         for s in SKILLS:
@@ -85,14 +89,13 @@ class Repo(unittest.TestCase):
                 text = fh.read()
             rel = os.path.relpath(path, ROOT)
             self.assertNotIn("\u2014", text, rel)
-            self.assertNotIn("jakeschincariol" + "@" + "gmail.com", text, rel)  # built, so this file passes too
+            self.assertNotIn("jakeschincariol" + "@" + "gmail.com", text, rel)
 
     def test_paper_trading_is_the_default(self):
         with open(os.path.join(ROOT, "trader-budget", "config.example.json")) as fh:
             cfg = json.load(fh)
         self.assertIs(cfg["paper"], True)
         self.assertIs(cfg.get("allow_options", False), False)
-
 
 if __name__ == "__main__":
     unittest.main()
