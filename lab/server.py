@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer
 import app
 
-CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'"
+CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'"
 
 def normalize_intraday(payload, now=None):
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -67,7 +67,7 @@ class Handler(app.Handler):
     def send_header(self, name, value):
         if name.lower() == 'content-security-policy':
             value = CSP
-        super().send_header(name, value)
+        value = 'SAMEORIGIN' if name.lower() == 'x-frame-options' else value; super().send_header(name, value)
 
     def do_GET(self):
         u = up.urlparse(self.path)
