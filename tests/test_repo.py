@@ -39,7 +39,7 @@ class Repo(unittest.TestCase):
     def test_root_matches_the_reel(self):
         root = sorted(d for d in os.listdir(ROOT)
                       if not d.startswith(".git") and d not in GENERATED_DIRS)
-        expected = [".claude-plugin", "LICENSE", "README.md", "tests"] + SKILLS + WEB_FILES
+        expected = [".claude-plugin", "LICENSE", "README.md", "lab", "tests"] + SKILLS + WEB_FILES
         self.assertEqual(root, sorted(expected))
         for name in WEB_FILES:
             self.assertTrue(os.path.isfile(os.path.join(ROOT, name)), name)
