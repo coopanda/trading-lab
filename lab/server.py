@@ -1,8 +1,11 @@
-"""Trading Lab isolated five-minute data extension. No broker or credentials."""
+"""Trading Lab UI and public data extension. No broker or credentials."""
+import csv
 import datetime as dt
+import io
 import json
 import math
 import os
+import re
 import urllib.parse as up
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer
@@ -63,6 +66,68 @@ def intraday(symbol):
     url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + up.quote(symbol) + '?range=1mo&interval=5m&includePrePost=false'
     return normalize_intraday(json.loads(app.fetch(url)))
 
+def stock_directory():
+    """Official public Nasdaq symbol-directory files, not a holdings/ranking feed."""
+    found = {}
+    for file, symbol_key in (('nasdaqlisted.txt', 'Symbol'), ('otherlisted.txt', 'ACT Symbol')):
+        raw = app.fetch('https://www.nasdaqtrader.com/dynamic/SymDir/' + file, 21600)
+        if isinstance(raw, bytes):
+            raw = raw.decode('utf-8-sig')
+        rows = csv.DictReader(io.StringIO(raw), delimiter='|')
+        for row in rows:
+            symbol = (row.get(symbol_key) or '').strip()
+            if not re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,9}', symbol):
+                continue
+            if row.get('Test Issue') != 'N' or row.get('ETF') != 'N':
+                continue
+            name = (row.get('Security Name') or symbol).strip()
+            found[symbol] = {'symbol': symbol, 'name': name}
+    if len(found) < 100:
+        raise ValueError('Public stock directory did not supply a usable listing set')
+    return {'stocks': sorted(found.values(), key=lambda x: x['symbol']), 'source': 'Nasdaq Trader public symbol directory', 'note': 'US listed securities excluding ETFs and test issues; may include preferred shares, warrants or units. Six-hour provider cache. Not every listing has chart coverage.'}
+
+def stock_chart(symbol, frame):
+    """Price display only. Does not change the daily or five-minute paper models."""
+    symbol = app.symbol(symbol)
+    if frame not in ('all', '1d', '1h', 'live'):
+        raise ValueError('Unknown chart timeframe')
+    interval, period = ('1mo', 'max') if frame == 'all' else ('1m', '5d')
+    url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + up.quote(symbol) + '?' + up.urlencode({'range': period, 'interval': interval, 'includePrePost': 'false'})
+    root = json.loads(app.fetch(url, 60 if frame == 'live' else 300)).get('chart', {})
+    if root.get('error') or not root.get('result'):
+        raise ValueError('Public chart provider did not supply this timeframe')
+    result = root['result'][0]
+    meta = result.get('meta', {})
+    tzname = meta.get('exchangeTimezoneName', 'America/New_York')
+    tz = ZoneInfo(tzname)
+    quote = (result.get('indicators', {}).get('quote') or [{}])[0]
+    bars = []
+    for i, stamp in enumerate(result.get('timestamp') or []):
+        values = [quote.get(k, [])[i] if i < len(quote.get(k, [])) else None for k in ('open', 'high', 'low', 'close')]
+        if not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in values):
+            continue
+        o, h, l, c = values
+        if h < max(o, c) or l > min(o, c):
+            continue
+        local = dt.datetime.fromtimestamp(stamp, tz)
+        volumes = quote.get('volume', [])
+        v = volumes[i] if i < len(volumes) else 0
+        bars.append({'t': stamp, 'date': local.date().isoformat() if frame == 'all' else local.isoformat(), 'session': local.date().isoformat(), 'o': o, 'h': h, 'l': l, 'c': c, 'v': v or 0})
+    if not bars:
+        raise ValueError('No valid OHLC bars in supplied chart')
+    if frame != 'all':
+        latest_session = bars[-1]['session']
+        bars = [b for b in bars if b['session'] == latest_session]
+        if frame == '1h':
+            cutoff = bars[-1]['t'] - 3600
+            bars = [b for b in bars if b['t'] > cutoff]
+    note = 'All available provider history, monthly OHLC candles; not every daily candle.' if frame == 'all' else 'Latest supplied regular session, one-minute candles. May be delayed or incomplete; most recent bar can still develop.'
+    if frame == '1h':
+        note += ' Most recent supplied hour, not necessarily the current clock hour.'
+    if frame == 'live':
+        note += ' Live mode polls every 60 seconds while visible; not an exchange-live streaming feed.'
+    return {'symbol': meta.get('symbol', symbol), 'currency': meta.get('currency', 'USD'), 'bars': bars, 'interval': interval, 'timezone': tzname, 'source': 'Yahoo Finance unofficial chart OHLC', 'note': note, 'fetchedAt': dt.datetime.now(dt.timezone.utc).isoformat()}
+
 class Handler(app.Handler):
     def send_header(self, name, value):
         if name.lower() == 'content-security-policy':
@@ -74,24 +139,29 @@ class Handler(app.Handler):
         q = {k: v[0] for k, v in up.parse_qs(u.query).items()}
         if u.path == '/':
             data = (app.ROOT / 'index.html').read_text()
-            data = data.replace('</body>', '<script src="/beginner.js" defer></script></body>')
+            scripts = '<script src="/beginner.js" defer></script><script src="/stocks.js" defer></script><script src="/settings.js" defer></script>'
+            data = data.replace('</body>', scripts + '</body>')
             return self.send(data.encode(), content='text/html; charset=utf-8')
-        if u.path == '/beginner.js':
-            return self.send((app.ROOT / 'lab' / 'beginner.js').read_bytes(), content='text/javascript; charset=utf-8')
-        if u.path == '/api/intraday':
+        if u.path in ('/beginner.js', '/stocks.js', '/settings.js'):
+            return self.send((app.ROOT / 'lab' / u.path.lstrip('/')).read_bytes(), content='text/javascript; charset=utf-8')
+        if u.path in ('/api/intraday', '/api/stocks', '/api/chart'):
             if not app.GATE.acquire(blocking=False):
                 return self.send({'error': 'Data queue busy; retry shortly'}, 429)
             try:
+                if u.path == '/api/stocks':
+                    return self.send(stock_directory())
+                if u.path == '/api/chart':
+                    return self.send(stock_chart(q.get('s', 'AAPL'), q.get('frame', 'all')))
                 return self.send(intraday(q.get('s', 'TSLA')))
             except Exception as e:
                 return self.send({'error': str(e)[:300], 'mode': 'paper-only', 'fabricated': False}, 400)
             finally:
                 app.GATE.release()
         if u.path == '/health':
-            return self.send({'status': 'ok', 'app': 'Trading Lab', 'mode': 'paper-only', 'engines': len(app.SKILLS), 'historicalNews': bool(os.getenv('ALPHAVANTAGE_API_KEY')), 'version': 'beginner-intraday-v1', 'intraday': '5m', 'paperExecution': 'local-simulated-next-open', 'ai': 'browser-finbert'})
+            return self.send({'status': 'ok', 'app': 'Trading Lab', 'mode': 'paper-only', 'engines': len(app.SKILLS), 'historicalNews': bool(os.getenv('ALPHAVANTAGE_API_KEY')), 'version': 'stocks-news-settings-v2', 'intraday': '5m', 'paperExecution': 'local-simulated-next-open', 'ai': 'browser-finbert', 'ui': 'stocks-news-time-machine', 'commit': os.getenv('RENDER_GIT_COMMIT', '')})
         return super().do_GET()
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '10000'))
-    print('Trading Lab beginner five-minute paper-only server on', port, flush=True)
+    print('Trading Lab Stocks / News / Time Machine paper-only server on', port, flush=True)
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()
